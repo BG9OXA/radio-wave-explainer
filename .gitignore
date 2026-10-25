@@ -1,7 +1,9 @@
 # 渲染产物
 out.mp4
 *.mp4
+!wave_1080p.mp4
 !docs/**/*.mp4
+!wave_1080p.mp4
 shots/
 !docs/shots/
 
