@@ -16,3 +16,6 @@ __pycache__/
 # 完整字体不入库（用 fonts/ 下的子集）
 fonts/*.ttf
 fonts/*.otf
+
+# 过程文件（封面/试片等）不进仓库，统一放 projects/wave/covers
+covers/
