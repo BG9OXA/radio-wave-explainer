@@ -547,7 +547,7 @@ function seg6(t, lt) {
 }
 /* =========================== 场景 7 · 电离层反射 (58-68s) =========================== */
 function segIon(t, lt) {
-  const GY = 856, IY = 316;                       // 地面 / 电离层高度
+  const GY = 764, IY = 296;                       // 地面 / 电离层高度（线要在字幕之上，否则被压住）
   const app = sstep(0, .9, lt);
   const groundY = x => GY + Math.pow((x - W / 2) / (W / 2), 2) * 26;   // 地球曲率
 
@@ -557,7 +557,7 @@ function segIon(t, lt) {
       const y = groundY(x);
       x === 50 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
-  }, [140, 190, 240], .5 * app, 1.8);
+  }, [140, 190, 240], .72 * app, 1.9);
 
   // ---- 电离层：波浪虚线 + 淡光带
   const bandTop = IY - 34, bandBot = IY + 34;
@@ -576,13 +576,12 @@ function segIon(t, lt) {
   text('约 300 公里高空 · 被太阳紫外光电离', 96, IY - 26, { size: 16, font: EN, color: '#7fa6c8', align: 'left', alpha: app * .85 });
 
   // ---- 天波跳跃路径：地面 → 电离层 → 地面 …
-  const HOP = 330;
-  const pts = [[170, GY]];
-  let x = 170, up = true;
-  while (x < W - 60) {
-    x += HOP;
-    pts.push([x, up ? IY : GY - 4]);
-    up = !up;
+  //      段数取偶数，保证终点落回地面；等分可用宽度，不会画到屏幕外。
+  const X0 = 170, XEND = W - 80, HOPS = 6;         // 6 段 = 3 次完整跳跃
+  const HOP = (XEND - X0) / HOPS;
+  const pts = [[X0, GY]];
+  for (let i = 1; i <= HOPS; i++) {
+    pts.push([X0 + i * HOP, i % 2 === 1 ? IY : GY - 4]);
   }
   // 路径总长，用于让光点匀速走
   const segLen = [];
@@ -611,7 +610,7 @@ function segIon(t, lt) {
       }
     }, C_B, alpha, w);
   };
-  drawPath(total, .16 * app, 1.4);                 // 全部路径（暗）
+  drawPath(total, .30 * app, 1.5);                 // 全部路径（暗，但要看得见走向）
   drawPath(travelled, .95, 2.6);                   // 已经走过（亮）
 
   // 行进光点
@@ -645,8 +644,8 @@ function segIon(t, lt) {
         dx === 0 ? ctx.moveTo(xx, y) : ctx.lineTo(xx, y);
       }
     }, [255, 140, 110], .88 * gk * gFade, 2.8);
-    text('地波 GROUND WAVE', 300, GY + 62, { size: 19, weight: 700, color: '#ff8c6e', alpha: gk * gFade });
-    text('贴着地表走，几十公里就衰减了', 300, GY + 94, { size: 20, color: '#ffb0a0', alpha: gk * gFade });
+    text('地波 GROUND WAVE', 300, GY - 54, { size: 19, weight: 700, color: '#ff8c6e', alpha: gk * gFade });
+    text('贴着地表走，几十公里就衰减了', 300, GY - 24, { size: 20, color: '#ffb0a0', alpha: gk * gFade });
   }
 
   // ---- 天波标注
