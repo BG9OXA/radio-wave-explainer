@@ -12,6 +12,10 @@ OUT = os.path.join(HERE, 'fonts')
 os.makedirs(OUT, exist_ok=True)
 
 html = open(SRC_HTML, encoding='utf-8').read()
+# 封面页也有字，一起纳入子集，免得封面缺字
+cover = os.path.join(HERE, 'cover.html')
+if os.path.exists(cover):
+    html += open(cover, encoding='utf-8').read()
 chars = set(chr(c) for c in range(0x20, 0x7f))   # ASCII 全量
 chars |= set(re.findall(r'[^\x00-\x7f]', html))  # 所有非 ASCII（中文/希腊/符号）
 chars |= set('λπΩμ≈°·—…⁶²³⁴⁰')

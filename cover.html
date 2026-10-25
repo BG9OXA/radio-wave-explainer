@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>电波 · 封面</title>
+<style>
+  @font-face{font-family:'NotoSerifSC';src:url('fonts/NotoSerifSC-700.woff2') format('woff2');font-weight:700;font-display:block}
+  @font-face{font-family:'NotoSerifSC';src:url('fonts/NotoSerifSC-400.woff2') format('woff2');font-weight:400;font-display:block}
+
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:#04070d}
+  body{font-family:'NotoSerifSC',serif;position:relative}
+
+  #bg{position:absolute;inset:0;width:1920px;height:1080px;display:block}
+
+  /* 渐变遮罩：只压中间文字区，四周保留画面细节 */
+  .veil{position:absolute;inset:0}
+  .va .veil{background:radial-gradient(ellipse 46% 52% at 50% 50%,
+      rgba(4,7,13,.90) 0%, rgba(4,7,13,.80) 42%, rgba(4,7,13,.30) 74%, rgba(4,7,13,0) 100%)}
+  .vb .veil{background:radial-gradient(ellipse 50% 54% at 50% 50%,
+      rgba(4,7,13,.90) 0%, rgba(4,7,13,.80) 42%, rgba(4,7,13,.28) 74%, rgba(4,7,13,0) 100%)}
+
+  /* 安全区：中央 1200x900，4:3 / 16:10 / 16:9 任何裁剪都不切到文字 */
+  .safe{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:1200px;height:900px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;
+  }
+  .kicker{font-size:34px;letter-spacing:.40em;color:#ffd98a;font-weight:700;margin-bottom:30px;
+    text-shadow:0 3px 22px rgba(0,0,0,1),0 0 46px rgba(255,200,90,.55)}
+  h1{font-weight:700;line-height:1.04;letter-spacing:.05em;color:#fff;
+    text-shadow:0 8px 40px rgba(0,0,0,1),0 0 80px rgba(120,200,255,.45)}
+  .sub{margin-top:34px;font-weight:700;color:#e8f2ff;text-shadow:0 4px 26px rgba(0,0,0,1)}
+  .tags{display:flex;gap:20px;margin-top:40px}
+  .tag{padding:15px 34px;border-radius:999px;font-size:34px;font-weight:700;
+    border:3px solid rgba(127,212,255,.62);color:#dcefff;background:rgba(8,18,32,.88);
+    text-shadow:0 3px 14px rgba(0,0,0,1)}
+  .tag.gold{border-color:rgba(255,217,138,.75);color:#ffe6ae;background:rgba(30,20,6,.88)}
+
+  .foot{position:absolute;left:0;right:0;bottom:46px;text-align:center;
+    font-size:30px;letter-spacing:.26em;color:#a8c6df;text-shadow:0 3px 18px rgba(0,0,0,1)}
+  .brand{position:absolute;right:60px;top:50px;font-size:30px;letter-spacing:.22em;
+    color:#ffd98a;font-weight:700;text-shadow:0 3px 18px rgba(0,0,0,1);
+    font-family:ui-sans-serif,system-ui,"Helvetica Neue",Arial,sans-serif}   /* 无衬线，O 不会看成 0 */
+
+  .va h1{font-size:262px}
+  .va .sub{font-size:58px;letter-spacing:.06em}
+  .vb h1{font-size:138px}
+</style>
+</head>
+<body>
+  <canvas id="bg" width="1920" height="1080"></canvas>
+  <div class="veil"></div>
+  <div class="brand">BG9OXA</div>
+  <div class="safe" id="safe"></div>
+
+  <script>
+  const cv = document.getElementById('bg');
+  const ctx = cv.getContext('2d');
+  const W = 1920, H = 1080, TAU = Math.PI * 2;
+  const C_E = [110, 210, 255], C_B = [255, 200, 110], C_W = [200, 225, 245], C_G = [255, 225, 150];
+
+  const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+  // 发光线条：三层叠加描边模拟光晕
+  function glow(pathFn, col, alpha, width, blur = 22) {
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.shadowColor = rgba(col, .9); ctx.shadowBlur = blur;
+    for (const [w, a] of [[width * 3.2, .10], [width * 1.9, .26], [width, 1]]) {
+      ctx.beginPath(); pathFn();
+      ctx.strokeStyle = rgba(col, alpha * a); ctx.lineWidth = w; ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function stars(n, alpha) {
+    let s = 20261025;
+    const rnd = () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    for (let i = 0; i < n; i++) {
+      const x = rnd() * W, y = rnd() * H, r = rnd() * 1.6 + .3;
+      ctx.fillStyle = `rgba(200,225,255,${(rnd() * .5 + .1) * alpha})`;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+  }
+
+  /* ============ A：三维电磁波 ============ */
+  function drawWave() {
+    const g = ctx.createRadialGradient(W / 2, H * .54, 80, W / 2, H * .54, 1250);
+    g.addColorStop(0, '#081422'); g.addColorStop(.55, '#050a13'); g.addColorStop(1, '#03060c');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    stars(150, .55);
+
+    const cx = W / 2, cy = H * .56;
+    const SC = 690, AY = 250, AX = 195, DX = .62, DY = .40;
+    const P = (z, y, x) => [cx + z * SC + x * DX, cy - y + x * DY];
+    const lam = 620, k = TAU / lam, ph = 2.1;
+
+    // 截面网格
+    for (const zc of [-.66, 0, .66]) {
+      glow(() => {
+        const a1 = P(zc, AY * 1.15, -AX * 1.2), a2 = P(zc, AY * 1.15, AX * 1.2);
+        const a3 = P(zc, -AY * 1.15, AX * 1.2), a4 = P(zc, -AY * 1.15, -AX * 1.2);
+        ctx.moveTo(a1[0], a1[1]); ctx.lineTo(a2[0], a2[1]);
+        ctx.lineTo(a3[0], a3[1]); ctx.lineTo(a4[0], a4[1]); ctx.closePath();
+      }, C_W, .13, 1.6, 10);
+    }
+
+    // E 波
+    glow(() => {
+      for (let z = -1.05; z <= 1.0501; z += .004) {
+        const v = Math.sin(k * (z * SC) - ph) * AY;
+        const p = P(z, v, 0);
+        z === -1.05 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]);
+      }
+    }, C_E, .96, 3.0, 26);
+
+    // B 波
+    glow(() => {
+      for (let z = -1.05; z <= 1.0501; z += .004) {
+        const v = Math.sin(k * (z * SC) - ph) * AX;
+        const p = P(z, 0, v);
+        z === -1.05 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]);
+      }
+    }, C_B, .96, 3.0, 26);
+
+    // 传播轴
+    const z0 = P(-1.12, 0, 0), z1 = P(1.12, 0, 0);
+    glow(() => { ctx.moveTo(z0[0], z0[1]); ctx.lineTo(z1[0], z1[1]); }, C_W, .40, 1.8, 14);
+  }
+
+  /* ============ B：天波跳跃 ============ */
+  function drawSky() {
+    const g = ctx.createRadialGradient(W / 2, H * .42, 60, W / 2, H * .42, 1300);
+    g.addColorStop(0, '#0a1828'); g.addColorStop(.55, '#050b14'); g.addColorStop(1, '#03060c');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    stars(170, .6);
+
+    const GY = 862, IY = 268;
+    const groundY = x => GY + Math.pow((x - W / 2) / (W / 2), 2) * 30;
+
+    // 地面
+    glow(() => {
+      for (let x = 30; x <= W - 30; x += 6) {
+        const y = groundY(x);
+        x === 30 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+    }, [140, 190, 240], .62, 2.2, 18);
+
+    // 电离层光带
+    const bT = IY - 44, bB = IY + 44;
+    const g2 = ctx.createLinearGradient(0, bT, 0, bB);
+    g2.addColorStop(0, 'rgba(90,160,255,0)');
+    g2.addColorStop(.5, 'rgba(90,160,255,.20)');
+    g2.addColorStop(1, 'rgba(90,160,255,0)');
+    ctx.fillStyle = g2; ctx.fillRect(0, bT, W, bB - bT);
+    glow(() => {
+      for (let x = 30; x <= W - 30; x += 6) {
+        const y = IY + Math.sin(x / 110) * 8;
+        x === 30 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+    }, [120, 190, 255], .72, 2.4, 20);
+
+    // 跳跃路径：偶数段，两端都落在地面
+    const X0 = 120, XEND = W - 120, HOPS = 6, HOP = (XEND - X0) / HOPS;
+    const pts = [[X0, GY]];
+    for (let i = 1; i <= HOPS; i++) pts.push([X0 + i * HOP, i % 2 === 1 ? IY : GY - 6]);
+    glow(() => {
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    }, C_W, .58, 2.6, 20);
+    // 反射点
+    for (let i = 0; i < pts.length; i++) {
+      glow(() => ctx.arc(pts[i][0], pts[i][1], 9, 0, TAU),
+           i % 2 === 1 ? [130, 200, 255] : C_G, .9, 2.2, 14);
+    }
+  }
+
+  const v = (new URLSearchParams(location.search).get('v') || 'a').toLowerCase();
+  document.body.classList.add('v' + v);
+  (v === 'a' ? drawWave : drawSky)();
+
+  const SAFE = document.getElementById('safe');
+  if (v === 'a') {
+    SAFE.innerHTML = `
+      <div class="kicker">75 秒 · 一次讲透</div>
+      <h1>电 波</h1>
+      <div class="sub">你按下发射键，它怎么飞出去？</div>`;
+    document.body.insertAdjacentHTML('beforeend', '<div class="foot">从一颗电子，讲到跨越大洋</div>');
+  } else {
+    SAFE.innerHTML = `
+      <div class="kicker">火腿必看 · 科普动画</div>
+      <h1>电波是怎么<br>飞出去的？</h1>
+      <div class="tags">
+        <span class="tag">驻波</span><span class="tag gold">光速</span><span class="tag">电离层</span>
+      </div>`;
+    document.body.insertAdjacentHTML('beforeend', '<div class="foot">75 秒 · 中英双语</div>');
+  }
+
+  window.__ready = false;
+  Promise.all([
+    document.fonts.load('700 100px NotoSerifSC'),
+    document.fonts.load('400 40px NotoSerifSC'),
+    document.fonts.ready,
+  ]).then(() => { window.__ready = true; });
+  </script>
+</body>
+</html>
