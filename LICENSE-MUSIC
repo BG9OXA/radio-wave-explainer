@@ -1,0 +1,40 @@
+配乐部分许可 · Music License
+================================
+
+适用范围 / Scope
+----------------
+  music.mp3        配乐成品
+  music_wave.py    生成该配乐的源码
+
+本项目的**代码**采用 MIT（见 LICENSE），但**配乐**单独采用：
+
+  Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+  (CC BY-NC-SA 4.0)
+  https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+原因 / Why
+----------
+配乐由 maxtinnate/AI_MUSIC_CREATOR 的合成引擎生成，该引擎以
+CC BY-NC-SA 4.0 发布。为保持一致与尊重上游，配乐沿用同一协议。
+
+你可以 / You may
+----------------
+  ✔ 非商业性地使用、复制、分发这段音乐
+  ✔ 改编、混音、重新编曲
+  ✔ 用于个人视频、课堂、非营利的科普作品
+
+条件 / Under these conditions
+-----------------------------
+  ● 署名（BY）        —— 注明来源：The Wave / BG9OXA，并保留本文件
+  ● 非商业（NC）      —— 不得用于付费内容、广告变现、商业产品
+  ● 相同方式共享（SA）—— 改编后的作品须以同一协议发布
+
+免责 / Disclaimer
+-----------------
+本音乐按"现状"提供，不附带任何明示或暗示的担保。
+
+字体 / Fonts
+------------
+fonts/*.woff2 为 Noto Serif SC 子集，采用 SIL Open Font License 1.1，
+版权归 Google Inc. 所有，不受上述许可约束。
+详见 https://scripts.sil.org/OFL

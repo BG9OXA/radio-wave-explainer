@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>电波 · THE WAVE</title>
+<style>
+  @font-face{font-family:'Noto Serif SC';src:url('fonts/NotoSerifSC-400.woff2') format('woff2'),url('fonts/NotoSerifSC-400.ttf') format('truetype');font-weight:400;font-display:block}
+  @font-face{font-family:'Noto Serif SC';src:url('fonts/NotoSerifSC-700.woff2') format('woff2'),url('fonts/NotoSerifSC-700.ttf') format('truetype');font-weight:700;font-display:block}
+  html,body{margin:0;background:#04070d;overflow:hidden}
+  canvas{display:block;width:100%;height:auto}   /* 预览时自适应宽度；内部像素始终 1920x1080，导出不受影响 */
+  #load{position:fixed;left:40px;bottom:30px;color:#7fa;font:14px monospace;z-index:3}
+  #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+         background:rgba(4,7,13,.72);cursor:pointer;z-index:5;backdrop-filter:blur(2px)}
+  #start .t{color:#e8c072;font:700 30px/1.6 "Noto Serif SC",serif;letter-spacing:.24em}
+  #start .s{color:#9fd8ff;font:14px/2.2 monospace;letter-spacing:.2em;margin-top:14px}
+  #start .p{width:64px;height:64px;border:1.5px solid #e8c072;border-radius:50%;display:flex;
+            align-items:center;justify-content:center;color:#e8c072;font-size:24px;margin-bottom:26px}
+  #au{display:none}
+</style>
+</head>
+<body>
+<canvas id="cv" width="1920" height="1080"></canvas>
+<audio id="au" src="music.mp3" preload="auto"></audio>
+<div id="start">
+  <div class="p">▶</div>
+  <div class="t">电 波</div>
+  <div class="s">点击播放 · CLICK TO PLAY</div>
+</div>
+<div id="load">加载中 · loading</div>
+<script>
+/* =====================================================================
+   电波 · THE WAVE  —  科普动画 75.45s / 1920x1080 / 30fps
+   画面是 t 的纯函数；段落边界与配乐小节线严格对齐：
+   0 · 4 · 12 · 24 · 38 · 50 · 64 · 75.45
+   科学要点：电子只振荡不迁移；E⊥B 且同相；c=λf 恒定；
+            20m 波段(14MHz)绕地球一圈约 0.134s
+   ===================================================================== */
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d', { alpha: false });
+const W = 1920, H = 1080, TOTAL = 75.452;
+const PI = Math.PI, TAU = PI * 2;
+
+const ZH = '"Noto Serif SC", "WenQuanYi Zen Hei", serif';
+const EN = 'Georgia, "Times New Roman", serif';
+const C_E = [94, 200, 255];    // 电场 青
+const C_B = [232, 192, 114];   // 磁场 金
+const C_W = [255, 255, 255];
+
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, t) => a + (b - a) * t;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const eout = x => 1 - Math.pow(1 - clamp(x), 3);
+const ein = x => Math.pow(clamp(x), 3);
+const win = (t, a, b, fi = .4, fo = .4) => Math.min(sstep(a, a + fi, t), 1 - sstep(b - fo, b, t));
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+/* 三层叠加描边模拟 bloom（比 shadowBlur 快得多，软渲染友好） */
+function glowPath(build, c, a = 1, w = 2) {
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const [mul, al] of [[6, .07], [3, .16], [1, 1]]) {
+    ctx.beginPath(); build();
+    ctx.strokeStyle = rgba(c, a * al); ctx.lineWidth = w * mul; ctx.stroke();
+  }
+}
+function dot(x, y, r, c, a = 1) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r * 4);
+  g.addColorStop(0, rgba(c, a)); g.addColorStop(.28, rgba(c, a * .35)); g.addColorStop(1, rgba(c, 0));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 4, 0, TAU); ctx.fill();
+  ctx.fillStyle = rgba(C_W, a * .9); ctx.beginPath(); ctx.arc(x, y, r * .5, 0, TAU); ctx.fill();
+}
+/* 手动字间距（不依赖 ctx.letterSpacing，headless 兼容） */
+function tracked(s, x, y, size, sp, font, color, align = 'center', alpha = 1) {
+  ctx.save(); ctx.font = `${size}px ${font}`; ctx.textBaseline = 'middle';
+  const ws = [...s].map(ch => ctx.measureText(ch).width + sp);
+  const tot = ws.reduce((a, b) => a + b, 0) - sp;
+  let cx = align === 'center' ? x - tot / 2 : align === 'right' ? x - tot : x;
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  [...s].forEach((ch, i) => { ctx.fillText(ch, cx, y); cx += ws[i]; });
+  ctx.restore();
+}
+function text(s, x, y, o = {}) {
+  ctx.save();
+  ctx.font = `${o.weight || 400} ${o.size || 40}px ${o.font || ZH}`;
+  ctx.textAlign = o.align || 'center'; ctx.textBaseline = 'middle';
+  ctx.globalAlpha = o.alpha ?? 1;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur || 10; }
+  ctx.fillStyle = o.color || '#fff'; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+
+/* ---------------- 背景：星尘 + 暗角（暗角一次性烘焙） ---------------- */
+const rnd = (() => { let a = 20261024; return () => { a = (a * 1103515245 + 12345) & 0x7fffffff; return a / 0x7fffffff; }; })();
+const STARS = Array.from({ length: 420 }, () => ({ x: rnd() * W, y: rnd() * H, z: .25 + rnd() * .75, p: rnd() * TAU }));
+const VIG = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(W / 2, H / 2, H * .22, W / 2, H / 2, H * .92);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.82)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H); return c;
+})();
+function backdrop(t) {
+  const g = ctx.createRadialGradient(W / 2, H * .5, 60, W / 2, H * .5, H * .95);
+  g.addColorStop(0, '#0a1424'); g.addColorStop(.55, '#060b14'); g.addColorStop(1, '#03060b');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (const s of STARS) {
+    const a = (.12 + .38 * s.z) * (0.55 + 0.45 * Math.sin(t * .7 + s.p));
+    ctx.fillStyle = `rgba(190,220,255,${a * .5})`;
+    ctx.fillRect(s.x - t * 3 * s.z % W + (s.x - t * 3 * s.z < 0 ? W : 0), s.y, 1.6 * s.z, 1.6 * s.z);
+  }
+}
+
+/* =========================== 场景 1 · 波断 (0-4s) =========================== */
+function seg1(t, lt) {
+  const y0 = H * .47, amp = 86, lam = 460;
+  const BRK = 3.0;
+  const brk = sstep(BRK - .02, BRK + .08, lt);
+  const xb = W * .5;
+  const ph = -lt * 620;
+  const phL = -BRK * 620;                                   // 左半截冻结在断开那一刻
+  const gap = 26 * brk;                                     // 断口留白，必须看得见
+  const travel = 1050 * eout(clamp((lt - BRK) / .9));       // 右半截加速飞走
+
+  // ---- 左半截：原地冻结，快速衰减
+  if (brk > 0) {
+    const aL = 1 - sstep(BRK, BRK + .75, lt) * .93;
+    if (aL > .03) {
+      glowPath(() => {
+        for (let x = -20; x <= xb - gap; x += 5) {
+          const y = y0 + Math.sin((x - phL) / lam * TAU) * amp * aL;
+          x === -20 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+      }, C_E, .95 * aL, 2.6);
+    }
+  }
+  // ---- 右半截：继续传播 + 整体飞走；断开前是完整波形推进
+  const segL = brk > 0 ? xb + gap : -20;
+  let segR;
+  if (brk > 0) segR = W + 60;
+  else segR = Math.min(W + 60, -20 + lerp(0, 1180, eout(clamp(lt / BRK))));
+  if (segR > segL) {
+    glowPath(() => {
+      for (let x = segL; x <= segR; x += 5) {
+        const env = brk > 0 ? clamp((segR - x) / 90) * .45 + .55 : 1;
+        const y = y0 + Math.sin(((x - travel) - ph) / lam * TAU) * amp * env;
+        x === segL ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+    }, C_E, .95, 2.6);
+  }
+  // ---- 飞走的波头
+  if (brk <= 0) {
+    const hx = lerp(-260, xb, eout(clamp(lt / BRK)));
+    dot(hx, y0 + Math.sin((hx - ph) / lam * TAU) * amp, 7, C_E, 1);
+  } else if (travel < 1000) {
+    const hx = Math.min(W + 40, xb + gap + 1600);
+    dot(hx, y0, 6, C_E, 1 - clamp(travel / 1000));
+  }
+  // ---- 断裂瞬间：冲击环 + 散开的碎片
+  if (lt > BRK && lt < BRK + .85) {
+    const k = (lt - BRK) / .85;
+    glowPath(() => ctx.arc(xb, y0, 24 + k * 300, 0, TAU), C_W, (1 - k) * .45, 2);
+    for (let i = 0; i < 7; i++) {
+      const a = (rnd() - .5) * 1.5, L2 = 40 + rnd() * 120, aa = 1 - k;
+      const sx = xb + (rnd() - .5) * 8, sy = y0 + (rnd() - .5) * 8;
+      glowPath(() => { ctx.moveTo(sx + Math.cos(a) * k * L2, sy + Math.sin(a) * k * L2);
+        ctx.lineTo(sx + Math.cos(a) * (k * L2 + 26), sy + Math.sin(a) * (k * L2 + 26)); }, C_W, aa * .5, 1.4);
+    }
+  }
+  // ---- 极淡的断点参考线
+  if (brk > .4) {
+    ctx.save(); ctx.setLineDash([4, 18]); ctx.globalAlpha = .13 * brk;
+    ctx.strokeStyle = '#9fd8ff'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(xb, 200); ctx.lineTo(xb, H - 300); ctx.stroke(); ctx.restore();
+  }
+}
+/* =========================== 场景 2 · 导体里的电子 (4-12s) =========================== */
+/* 科学要点：
+   1. 天线是一根导体，电子是"集体同步振荡"，不是每个电子各自抖、也不是球体飘着。
+   2. 半波振子上电流呈驻波分布 I(z) ∝ cos(πz/L)：中间电流最大，两端为零。
+      所以中间的电子抖得最厉害，两端的几乎不动。
+   3. 电荷堆在两端且随相位交换符号 —— 这正是"振荡偶极子"向外辐射的源头。
+   4. 100W 级、14MHz 下电子振幅只有皮米级（比原子还小），画面上是放大了几亿倍。 */
+function seg2(t, lt) {
+  const cx = W * .5, yT = 214, yB = 826;
+  const ap = sstep(0, .5, lt);
+  const ph = TAU * 2.1 * lt;                     // 与配乐 pulse 密度呼应
+  const A = 26;                                  // 画面上的电子位移（已极度放大）
+  const q = Math.sin(ph);                        // 整体位移方向 -1..1
+
+  // ---- 半波振子：细长导体 + 两端端帽
+  ctx.save();
+  const g = ctx.createLinearGradient(cx - 20, 0, cx + 20, 0);
+  g.addColorStop(0, rgba(C_B, .08)); g.addColorStop(.5, rgba(C_B, .62)); g.addColorStop(1, rgba(C_B, .08));
+  ctx.globalAlpha = ap; ctx.fillStyle = g;
+  ctx.fillRect(cx - 18, yT, 36, yB - yT);
+  ctx.restore();
+  glowPath(() => { ctx.moveTo(cx - 18, yT); ctx.lineTo(cx - 18, yB); }, C_B, .45 * ap, 1.2);
+  glowPath(() => { ctx.moveTo(cx + 18, yT); ctx.lineTo(cx + 18, yB); }, C_B, .45 * ap, 1.2);
+  for (const yy of [yT, yB]) {                   // 端帽
+    ctx.save(); ctx.globalAlpha = ap * .9; ctx.fillStyle = rgba(C_B, .85);
+    ctx.fillRect(cx - 46, yy === yT ? yy - 9 : yy, 92, 9); ctx.restore();
+  }
+
+  // ---- 导体里的自由电子：全部同相，振幅按电流驻波 cos(πz/L) 分布
+  const N = 42;
+  for (let i = 0; i < N; i++) {
+    const u = i / (N - 1);
+    const zc = (u - .5) * 2;                     // -1..1
+    const base = lerp(yT + 22, yB - 22, u);
+    const cur = Math.cos(zc * Math.PI / 2);      // 电流分布：中间 1，两端 0
+    const off = cur * A * q;
+    const col = (i % 3) - 1;                     // 三列 = 导线截面里的多个电子
+    dot(cx + col * 7, base - off, 3.6 + 1.8 * Math.abs(cur), C_E, ap * (.26 + .74 * Math.abs(cur)));
+  }
+
+  // ---- 导体说明
+  const k1 = sstep(.5, 1.3, lt);
+  text('导体里的自由电子 · 集体同步振荡', cx, yT - 74, { size: 28, color: '#cfe6ff', alpha: k1 });
+  text('FREE ELECTRONS IN THE CONDUCTOR · MOVING IN STEP', cx, yT - 42, { size: 15, font: EN, color: '#8fb3cf', alpha: k1 * .85 });
+  text('电流最大在中央，电荷堆在两端', cx, yB + 56, { size: 24, color: '#9fd8ff', alpha: k1 * .9 });
+
+  // ---- 两端电荷：电子整体向上 → 上端缺电子带正电，下端积电子带负电
+  const chA = ap * sstep(.7, 1.5, lt);
+  if (chA > 0) {
+    /* 电子带负电：整体向上位移时，上端电子过剩 → 上端为负，下端缺电子 → 下端为正。 */
+    const up = q > 0;
+    const topSign = up ? '−' : '+', botSign = up ? '+' : '−';
+    const sgnCol = s => (s === '+' ? '#ff8a6e' : '#6ec6ff');
+    for (const sx of [cx - 104, cx + 104]) {
+      text(topSign, sx, yT + 40, { size: 64, weight: 700, color: sgnCol(topSign), alpha: chA });
+      text(botSign, sx, yB - 30, { size: 64, weight: 700, color: sgnCol(botSign), alpha: chA });
+    }
+  }
+
+  // ---- 左：位移量级（真实值小得离谱）
+  const bx = cx - 344, k2 = sstep(1.7, 2.5, lt);
+  if (k2 > 0) {
+    ctx.save(); ctx.globalAlpha = k2;
+    const mid = (yT + yB) / 2;
+    glowPath(() => { ctx.moveTo(bx, yT + 120); ctx.lineTo(bx, yB - 120); }, C_W, .28, 1);
+    glowPath(() => { ctx.moveTo(bx, mid - 30); ctx.lineTo(bx, mid + 30); }, C_E, .95, 2.4);
+    for (const d of [-1, 1]) {
+      glowPath(() => { ctx.moveTo(bx, mid + d * 38); ctx.lineTo(bx - 7, mid + d * 25); ctx.lineTo(bx + 7, mid + d * 25); ctx.closePath(); }, C_E, .95, 1.6);
+    }
+    text('位移 ≈ 皮米级', bx, mid - 88, { size: 28, color: '#9fd8ff', alpha: k2 });
+    text('不到一个原子的百分之一', bx, mid + 92, { size: 20, color: '#8fb3cf', alpha: k2 * .95 });
+    text('DISPLACEMENT ~ pm', bx, mid + 126, { size: 15, font: EN, color: '#7fa6c8', alpha: k2 * .85 });
+    ctx.restore();
+  }
+
+  // ---- 右：波速对比
+  const rx = cx + 452, k3 = sstep(2.6, 3.4, lt);
+  if (k3 > 0) {
+    ctx.save(); ctx.globalAlpha = k3;
+    const len = 290, cy0 = H * .5;
+    glowPath(() => { ctx.moveTo(rx - len / 2, cy0); ctx.lineTo(rx + len / 2, cy0); }, C_B, .9, 2.4);
+    glowPath(() => { ctx.moveTo(rx + len / 2, cy0); ctx.lineTo(rx + len / 2 - 16, cy0 - 9); ctx.lineTo(rx + len / 2 - 16, cy0 + 9); ctx.closePath(); }, C_B, .9, 1.6);
+    text('波速 ≈ 光速（真空）', rx, cy0 - 92, { size: 26, color: '#e8c072', alpha: k3 });
+    text('299,792,458 m/s', rx, cy0 + 92, { size: 25, font: EN, color: '#e8c072', alpha: k3 * .95 });
+    ctx.restore();
+  }
+}
+
+/* =========================== 场景 3 · 电场荡开 (12-24s) =========================== */
+function seg3(t, lt) {
+  const cx = W * .5, cy = H * .48;
+  const anti = sstep(0, 1.2, lt);
+  const flat = .48;                              // 椭圆压扁 → 透视
+  // 天线（缩小）
+  ctx.save(); ctx.globalAlpha = anti;
+  glowPath(() => { ctx.moveTo(cx, cy - 70); ctx.lineTo(cx, cy + 70); }, C_B, .9, 4);
+  dot(cx, cy, 5, C_E, anti);
+  ctx.restore();
+  // 扩散波前
+  const SPD = 300, MAXR = 1500, GAP = 300;
+  const t0 = lt - .55;
+  if (t0 > 0) {
+    for (let k = 0; k < 6; k++) {
+      const r = ((t0 * SPD) + k * GAP) % (MAXR + GAP);
+      if (r < 12) continue;
+      const a = (1 - r / MAXR) * .85 * anti;
+      if (a <= .01) continue;
+      const w = lerp(3.4, 1, clamp(r / MAXR));
+      glowPath(() => ctx.ellipse(cx, cy, r, r * flat, 0, 0, TAU), C_E, a, w);
+    }
+  }
+  // 波前与电子同频：中心闪动的同步指示
+  const f = 2.1, pulse = Math.abs(Math.sin(TAU * f * lt));
+  if (anti > .5) {
+    glowPath(() => ctx.arc(cx, cy, 26 + pulse * 12, 0, TAU), C_E, .5 * anti * pulse, 1.6);
+  }
+  // 尺度标注
+  const k2 = sstep(2.4, 3.4, lt);
+  if (k2 > 0) {
+    const r = 620, y = cy;
+    ctx.save(); ctx.globalAlpha = k2 * .9;
+    ctx.setLineDash([5, 12]); ctx.strokeStyle = 'rgba(160,210,255,.35)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(cx + 20, y); ctx.lineTo(cx + r, y); ctx.stroke();
+    ctx.setLineDash([]);
+    text('电场向外传播', cx + r * .55, y - 30, { size: 26, color: '#9fd8ff', alpha: k2 });
+    text('THE FIELD TRAVELS OUTWARD', cx + r * .55, y + 30, { size: 16, font: EN, color: '#7fa6c8', alpha: k2 * .9 });
+    ctx.restore();
+  }
+}
+/* =========================== 场景 4 · E 与 B 立体正交 (22-34s) =========================== */
+/* 科学要点：
+   1. 真三维坐标系：z = 传播方向 c，y = 电场 E，x = 磁场 B，三者两两垂直。
+   2. E 沿 y 轴振动，B 沿 x 轴振动，严格同相（同时最大、同时过零）。
+   3. 传播速度 v = ω·λ/2π，放慢到约 383 px/s，让曲线看得清。 */
+function seg4(t, lt) {
+  const cx = W * .5, cy = H * .54;
+  const SC = 430;                    // 传播轴半长
+  const AY = 112;                    // E 振幅（竖直）
+  const AX = 100;                    // B 振幅（纵深）
+  const DX = .62, DY = .40;          // 纵深轴斜投影系数
+  const lam = 430, k = TAU / lam, ph = lt * 5.6;
+  const app = sstep(0, .9, lt);
+
+  // 3D → 2D：P(z, y, x)
+  const P = (z, y, x) => [cx + z * SC + x * DX, cy - y + x * DY];
+
+  // 箭头头部
+  const head = (px, py, dx, dy, col, a) => {
+    const L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L;
+    glowPath(() => {
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - ux * 16 - uy * 7, py - uy * 16 + ux * 7);
+      ctx.lineTo(px - ux * 16 + uy * 7, py - uy * 16 - ux * 7);
+      ctx.closePath();
+    }, col, a, 1.2);
+  };
+
+  // ---- 垂直传播方向的截面网格（空间纵深参照）
+  const gridA = app * .16;
+  for (const zc of [-.66, 0, .66]) {
+    glowPath(() => {
+      const a1 = P(zc, AY * 1.18, -AX * 1.2), a2 = P(zc, AY * 1.18, AX * 1.2);
+      const a3 = P(zc, -AY * 1.18, AX * 1.2), a4 = P(zc, -AY * 1.18, -AX * 1.2);
+      ctx.moveTo(a1[0], a1[1]); ctx.lineTo(a2[0], a2[1]);
+      ctx.lineTo(a3[0], a3[1]); ctx.lineTo(a4[0], a4[1]); ctx.closePath();
+    }, C_W, gridA, 1);
+  }
+
+  // ---- E 波（竖直，青色）
+  const eAlpha = app * sstep(.2, 1.4, lt);
+  glowPath(() => {
+    for (let z = -1; z <= 1.0001; z += .005) {
+      const v = Math.sin(k * (z * SC) - ph) * AY;
+      const p = P(z, v, 0);
+      z === -1 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]);
+    }
+  }, C_E, .95 * eAlpha, 2.7);
+
+  // ---- B 波（纵深，金色）—— 与 E 严格同相
+  const bAlpha = app * sstep(1.0, 2.2, lt);
+  glowPath(() => {
+    for (let z = -1; z <= 1.0001; z += .005) {
+      const v = Math.sin(k * (z * SC) - ph) * AX;
+      const p = P(z, 0, v);
+      z === -1 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]);
+    }
+  }, C_B, .95 * bAlpha, 2.7);
+
+  // ---- 三条坐标轴：最后画，压在波形之上，永远清晰可辨
+  const axA = app * .92;
+  if (app > 0) {
+    // z = 传播方向
+    const z0 = P(-1.16, 0, 0), z1 = P(1.16, 0, 0);
+    glowPath(() => { ctx.moveTo(z0[0], z0[1]); ctx.lineTo(z1[0], z1[1]); }, C_W, axA * .55, 1.6);
+    head(z1[0], z1[1], z1[0] - z0[0], 0, C_W, axA * .85);
+    text('c  传播方向', z1[0] - 22, z1[1] + 42, { size: 21, color: '#cfe6ff', alpha: app * .92, align: 'right' });
+
+    // y = 电场 E（竖直）
+    const y0 = P(0, -AY * 1.62, 0), y1 = P(0, AY * 1.62, 0);
+    glowPath(() => { ctx.moveTo(y0[0], y0[1]); ctx.lineTo(y1[0], y1[1]); }, C_E, axA * .62, 1.6);
+    head(y1[0], y1[1], 0, -1, C_E, axA * .9);
+    text('E  电场', y1[0] + 18, y1[1] + 6, { size: 26, weight: 700, color: '#7fd4ff', alpha: app * .95, align: 'left' });
+
+    // x = 磁场 B（纵深）
+    const x0 = P(0, 0, -AX * 2.0), x1 = P(0, 0, AX * 2.0);
+    glowPath(() => { ctx.moveTo(x0[0], x0[1]); ctx.lineTo(x1[0], x1[1]); }, C_B, axA * .62, 1.6);
+    head(x1[0], x1[1], x1[0] - x0[0], x1[1] - x0[1], C_B, axA * .9);
+    text('B  磁场', x1[0] + 22, x1[1] + 10, { size: 26, weight: 700, color: '#ffd98a', alpha: app * .95, align: 'left' });
+  }
+
+  // ---- 波峰处画 E、B 矢量，直观呈现"两两垂直"的十字
+  const vA = app * sstep(2.6, 3.6, lt);
+  if (vA > 0) {
+    for (let z = -.92; z <= .96; z += .31) {
+      const v = Math.sin(k * (z * SC) - ph);
+      if (Math.abs(v) < .22) continue;
+      const eTop = P(z, v * AY, 0), bTop = P(z, 0, v * AX), o = P(z, 0, 0);
+      ctx.save(); ctx.globalAlpha = vA * .8;
+      ctx.strokeStyle = rgba(C_E, .85); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(o[0], o[1]); ctx.lineTo(eTop[0], eTop[1]); ctx.stroke();
+      ctx.strokeStyle = rgba(C_B, .85);
+      ctx.beginPath(); ctx.moveTo(o[0], o[1]); ctx.lineTo(bTop[0], bTop[1]); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // ---- 标注
+  const lA = sstep(1.5, 2.4, lt);
+  if (lA > 0) {
+    text('三者两两垂直 · 同时涨落 · 谁也离不开谁', cx, H - 232, { size: 29, color: '#cfe6ff', alpha: lA * .95 });
+    text('MUTUALLY PERPENDICULAR · IN PHASE · NEITHER TRAVELS ALONE', cx, H - 194, { size: 15, font: EN, color: '#8fb3cf', alpha: lA * .85 });
+  }
+}
+
+/* =========================== 场景 5 · c = λf (38-50s) =========================== */
+function seg5(t, lt) {
+  const x0 = 300, x1 = W - 300, V = 520;
+  const rows = [
+    { y: 340, lam: 420, name: '长波 LONG', col: [255, 138, 116] },
+    { y: 520, lam: 232, name: '短波 SHORT', col: [255, 214, 120] },
+    { y: 700, lam: 138, name: '微波 MICRO', col: [178, 140, 255] },
+  ];
+  const app = sstep(0, .8, lt);
+  rows.forEach((r, i) => {
+    const a = app * sstep(i * .35, i * .35 + .9, lt);
+    const ph = lt * V;
+    // 标尺
+    ctx.save(); ctx.globalAlpha = a * .18; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x0 - 30, r.y); ctx.lineTo(x1 + 30, r.y); ctx.stroke(); ctx.restore();
+    glowPath(() => {
+      for (let x = x0; x <= x1; x += 3) {
+        const y = r.y + Math.sin(TAU * (x - ph) / r.lam) * 46;
+        x === x0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+    }, r.col, .92 * a, 2.2);
+    text(r.name, x0 - 26, r.y - 48, { size: 20, font: EN, color: rgba(r.col, .8), align: 'left', alpha: a });
+    // 波长标注
+    const k2 = a * sstep(1.2, 2.0, lt);
+    if (k2 > .05) {
+      const bx = x1 - 10, span = Math.min(r.lam, 300), sx = bx - span * .9;
+      glowPath(() => { ctx.moveTo(sx, r.y + 62); ctx.lineTo(sx + span * .9, r.y + 62); }, C_W, .55 * k2, 1.4);
+      text('λ', sx + span * .45, r.y + 84, { size: 21, font: EN, color: '#fff', alpha: k2 * .8 });
+    }
+  });
+  // 相同的速度箭头（三条同长）
+  const k3 = sstep(2.2, 3.2, lt);
+  if (k3 > 0) {
+    ctx.save(); ctx.globalAlpha = k3 * .9;
+    const y = 835;
+    glowPath(() => { ctx.moveTo(W * .5 - 300, y); ctx.lineTo(W * .5 + 300, y); }, C_W, .7, 2);
+    glowPath(() => { ctx.moveTo(W * .5 + 300, y); ctx.lineTo(W * .5 + 282, y - 10); ctx.lineTo(W * .5 + 282, y + 10); ctx.closePath(); }, C_W, .7, 1.6);
+    text('速度完全相同 c', W * .5, y - 40, { size: 28, color: '#fff', alpha: k3 });
+    ctx.restore();
+  }
+  // 公式浮现（先垫一块羽化背板，否则会被中间的波压住）
+  const k4 = sstep(5.2, 6.4, lt);
+  if (k4 > 0) {
+    ctx.save();
+    const FY = H * .5 - 42;                     // 公式整体上移，重心不再压在下半屏
+    const bg = ctx.createRadialGradient(W / 2, FY + 16, 40, W / 2, FY + 16, 440);
+    bg.addColorStop(0, `rgba(3,6,12,${.97 * k4})`);
+    bg.addColorStop(.55, `rgba(3,6,12,${.90 * k4})`);
+    bg.addColorStop(1, 'rgba(3,6,12,0)');
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.ellipse(W / 2, FY + 16, 480, 178, 0, 0, TAU); ctx.fill();
+    ctx.restore();
+
+    ctx.save(); ctx.globalAlpha = k4;
+    const g = ctx.createLinearGradient(W / 2 - 200, 0, W / 2 + 200, 0);
+    g.addColorStop(0, rgba(C_B, .25)); g.addColorStop(.5, rgba(C_B, 1)); g.addColorStop(1, rgba(C_B, .25));
+    ctx.font = `700 96px ${EN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = g; ctx.shadowColor = rgba(C_B, .55); ctx.shadowBlur = 26 * k4;
+    ctx.fillText('c = λ f', W / 2, FY);
+    ctx.restore();
+    text('波长越短，频率越高，真空中的速度不变', W / 2, FY + 104, { size: 30, color: '#cfe6ff', alpha: k4 });
+    text('SHORTER WAVELENGTH, HIGHER FREQUENCY, SAME SPEED IN VACUUM', W / 2, FY + 146, { size: 15, font: EN, color: '#8fb3cf', alpha: k4 * .85 });
+  }
+}
+/* =========================== 场景 6 · 频谱与地球 (50-64s) =========================== */
+function seg6(t, lt) {
+  // ---- 左：频谱
+  const bx = 150, bw = 660, by = 300, bh = 300;
+  const app = sstep(0, .9, lt);
+  const bands = [
+    ['长波 LW', 0.00, 0.14, [255, 120, 110]],
+    ['中波 MW', 0.14, 0.28, [255, 168, 96]],
+    ['短波 SW', 0.28, 0.58, [255, 214, 120]],
+    ['超短波 VHF', 0.58, 0.78, [150, 230, 170]],
+    ['微波 μW', 0.78, 1.00, [178, 140, 255]],
+  ];
+  for (const [name, a0, a1, col] of bands) {
+    const x = bx + a0 * bw, w = (a1 - a0) * bw - 3;
+    const a = app * sstep(a0 * .5, a0 * .5 + .7, lt);
+    ctx.save(); ctx.globalAlpha = a * .2; ctx.fillStyle = rgba(col, 1);
+    ctx.fillRect(x, by, w, bh); ctx.restore();
+    ctx.save(); ctx.globalAlpha = a * .8; ctx.fillStyle = rgba(col, 1);
+    ctx.fillRect(x, by, w, 2.5); ctx.restore();
+    text(name, x + w / 2, by - 26, { size: 17, font: EN, color: rgba(col, .85), alpha: a });
+  }
+  // 高亮 20m 波段（14MHz）
+  const hi = sstep(2.6, 3.6, lt);
+  if (hi > 0) {
+    // 对数尺度：30kHz–300GHz 跨 7 个数量级，14MHz 落在 0.381 处
+    const hx = bx + .381 * bw, hw = .070 * bw;
+    ctx.save(); ctx.globalAlpha = hi * .9;
+    const g = ctx.createLinearGradient(hx, 0, hx + hw, 0);
+    g.addColorStop(0, 'rgba(255,236,170,.15)'); g.addColorStop(.5, 'rgba(255,236,170,.85)'); g.addColorStop(1, 'rgba(255,236,170,.15)');
+    ctx.fillStyle = g; ctx.fillRect(hx, by, hw, bh);
+    glowPath(() => { ctx.moveTo(hx + hw / 2, by - 8); ctx.lineTo(hx + hw / 2, by + bh + 8); }, [255, 236, 170], .9 * hi, 2);
+    text('20m', hx + hw / 2, by - 56, { size: 26, weight: 700, color: '#ffe9a8', alpha: hi });
+    text('14 MHz', hx + hw / 2, by + bh + 44, { size: 21, font: EN, color: '#ffe9a8', alpha: hi });
+    ctx.restore();
+  }
+  text('射频频谱  RADIO SPECTRUM', bx + bw / 2, by + bh + 96, { size: 19, font: EN, color: '#8fb3cf', alpha: app * .8 });
+
+  // ---- 右：线框地球 + 绕行弧线
+  const gx = W - 470, gy = H * .48, R = 210;
+  const ga = sstep(.6, 1.8, lt);
+  if (ga > 0) {
+    ctx.save(); ctx.globalAlpha = ga;
+    // 球体
+    glowPath(() => ctx.arc(gx, gy, R, 0, TAU), [150, 200, 240], .30, 1.4);
+    for (let i = 1; i < 5; i++) {  // 纬线
+      const yy = -1 + i * .4;
+      glowPath(() => ctx.ellipse(gx, gy + yy * R, Math.sqrt(Math.max(0, 1 - yy * yy)) * R, R * .08, 0, 0, TAU), [150, 200, 240], .18, 1);
+    }
+    for (let i = 0; i < 4; i++) {  // 经线
+      const rx = Math.abs(Math.cos(i * PI / 4)) * R;
+      glowPath(() => ctx.ellipse(gx, gy, rx, R, 0, 0, TAU), [150, 200, 240], .18, 1);
+    }
+    // 绕行弧：从左边地表出发，绕过正面到右侧
+    const prog = clamp((lt - 2.2) / 5.2);
+    if (prog > 0) {
+      const A0 = PI * .82, A1 = A0 + TAU * .92 * eout(prog);
+      glowPath(() => {
+        for (let u = 0; u <= 1; u += .01) {
+          const a = lerp(A0, A1, u), rr = R * 1.16;
+          const x = gx + Math.cos(a) * rr * .96, y = gy + Math.sin(a) * rr * .42 - Math.sin(u * PI) * 26;
+          u === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+      }, C_B, .9 * ga, 2.4);
+      // 行进的光点
+      const a = A1, x = gx + Math.cos(a) * R * 1.16 * .96, y = gy + Math.sin(a) * R * 1.16 * .42;
+      dot(x, y, 6, C_B, ga);
+    }
+    // 时间标注
+    const k2 = sstep(3.4, 4.6, lt);
+    if (k2 > 0) {
+      text('光 1 秒可以绕地球 7.5 圈', gx, gy + R + 74, { size: 26, color: '#ffe9a8', alpha: k2 });
+      text('C = 299,792,458 m/s · 赤道周长 40,075 km', gx, gy + R + 112, { size: 16, font: EN, color: '#8fb3cf', alpha: k2 * .85 });
+    }
+    ctx.restore();
+  }
+}
+/* =========================== 场景 7 · 电离层反射 (58-68s) =========================== */
+function segIon(t, lt) {
+  const GY = 856, IY = 316;                       // 地面 / 电离层高度
+  const app = sstep(0, .9, lt);
+  const groundY = x => GY + Math.pow((x - W / 2) / (W / 2), 2) * 26;   // 地球曲率
+
+  // ---- 地面
+  glowPath(() => {
+    for (let x = 50; x <= W - 50; x += 8) {
+      const y = groundY(x);
+      x === 50 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+  }, [140, 190, 240], .5 * app, 1.8);
+
+  // ---- 电离层：波浪虚线 + 淡光带
+  const bandTop = IY - 34, bandBot = IY + 34;
+  const g2 = ctx.createLinearGradient(0, bandTop, 0, bandBot);
+  g2.addColorStop(0, 'rgba(90,160,255,0)');
+  g2.addColorStop(.5, `rgba(90,160,255,${.13 * app})`);
+  g2.addColorStop(1, 'rgba(90,160,255,0)');
+  ctx.fillStyle = g2; ctx.fillRect(40, bandTop, W - 80, bandBot - bandTop);
+  glowPath(() => {
+    for (let x = 50; x <= W - 50; x += 7) {
+      const y = IY + Math.sin(x / 95 + lt * 1.1) * 6;
+      x === 50 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+  }, [120, 190, 255], .55 * app, 1.5);
+  text('电离层  IONOSPHERE', 96, IY - 56, { size: 24, color: '#9fd8ff', align: 'left', alpha: app });
+  text('约 300 公里高空 · 被太阳紫外光电离', 96, IY - 26, { size: 16, font: EN, color: '#7fa6c8', align: 'left', alpha: app * .85 });
+
+  // ---- 天波跳跃路径：地面 → 电离层 → 地面 …
+  const HOP = 330;
+  const pts = [[170, GY]];
+  let x = 170, up = true;
+  while (x < W - 60) {
+    x += HOP;
+    pts.push([x, up ? IY : GY - 4]);
+    up = !up;
+  }
+  // 路径总长，用于让光点匀速走
+  const segLen = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    segLen.push(d); total += d;
+  }
+  const prog = clamp((lt - 1.1) / 7.2);
+  const travelled = total * eout(prog);
+
+  // 已走过 / 未走过两种亮度
+  const drawPath = (limit, alpha, w) => {
+    let acc = 0;
+    glowPath(() => {
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) {
+        if (acc >= limit) break;
+        const rest = limit - acc;
+        if (rest >= segLen[i - 1]) { ctx.lineTo(pts[i][0], pts[i][1]); acc += segLen[i - 1]; }
+        else {
+          const u = rest / segLen[i - 1];
+          ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], u), lerp(pts[i - 1][1], pts[i][1], u));
+          acc = limit; break;
+        }
+      }
+    }, C_B, alpha, w);
+  };
+  drawPath(total, .16 * app, 1.4);                 // 全部路径（暗）
+  drawPath(travelled, .95, 2.6);                   // 已经走过（亮）
+
+  // 行进光点
+  if (prog > 0) {
+    let acc = 0, px = pts[0][0], py = pts[0][1];
+    for (let i = 1; i < pts.length; i++) {
+      if (acc + segLen[i - 1] >= travelled) {
+        const u = (travelled - acc) / segLen[i - 1];
+        px = lerp(pts[i - 1][0], pts[i][0], u);
+        py = lerp(pts[i - 1][1], pts[i][1], u);
+        break;
+      }
+      acc += segLen[i - 1];
+    }
+    dot(px, py, 8, C_B, app);
+  }
+  // 反射点闪烁
+  for (let i = 1; i < pts.length; i++) {
+    const reached = travelled > segLen.slice(0, i - 1).reduce((a, b) => a + b, 0);
+    if (!reached) continue;
+    glowPath(() => ctx.arc(pts[i][0], pts[i][1], 7 + Math.sin(lt * 5 + i) * 1.6, 0, TAU), C_B, .8 * app, 1.6);
+  }
+
+  // ---- 地波对比：贴着地表走，几十公里就衰完
+  const gk = sstep(2.0, 3.2, lt);
+  if (gk > 0) {
+    const gFade = 1 - clamp((lt - 4.0) / 3.6);        // 留足时间让观众看清对比
+    glowPath(() => {
+      for (let dx = 0; dx <= 260; dx += 5) {
+        const xx = 170 + dx, y = groundY(xx);
+        dx === 0 ? ctx.moveTo(xx, y) : ctx.lineTo(xx, y);
+      }
+    }, [255, 140, 110], .88 * gk * gFade, 2.8);
+    text('地波 GROUND WAVE', 300, GY + 62, { size: 19, weight: 700, color: '#ff8c6e', alpha: gk * gFade });
+    text('贴着地表走，几十公里就衰减了', 300, GY + 94, { size: 20, color: '#ffb0a0', alpha: gk * gFade });
+  }
+
+  // ---- 天波标注
+  const lk = sstep(1.4, 2.6, lt);
+  if (lk > 0) {
+    text('天波 SKY WAVE', W - 300, IY + 92, { size: 25, weight: 700, color: '#ffe9a8', alpha: lk });
+    text('一跳约 2000–3000 公里', W - 300, IY + 128, { size: 19, color: '#e8c072', alpha: lk * .9 });
+  }
+}
+
+/* =========================== 场景 8 · 收尾 (68-75.45s) =========================== */
+function seg8(t, lt) {
+  const cx = W * .5, cy = H * .47;
+  const d = 75.452 - t;                       // 距结束
+  const out = 1 - sstep(73.4, 75.35, t);      // 整体淡出
+  // 天线熄灭
+  const fade = 1 - sstep(0, 2.4, lt) * .78;
+  ctx.save(); ctx.globalAlpha = fade * out;
+  glowPath(() => { ctx.moveTo(cx, cy - 66); ctx.lineTo(cx, cy + 66); }, C_B, .75, 3.4);
+  dot(cx, cy, 4, C_E, fade);
+  ctx.restore();
+  // 最后一圈余波
+  const r = 40 + eout(clamp(lt / 8)) * 900;
+  const ra = (1 - clamp(lt / 8)) * .55 * out;
+  if (ra > .01) glowPath(() => ctx.ellipse(cx, cy, r, r * .5, 0, 0, TAU), C_E, ra, lerp(3.4, .8, clamp(lt / 8)));
+  // 标题
+  const kt = sstep(.9, 2.6, lt);
+  if (kt > 0) {
+    ctx.save(); ctx.globalAlpha = kt * out;
+    const g = ctx.createLinearGradient(cx - 320, 0, cx + 320, 0);
+    g.addColorStop(0, 'rgba(232,192,114,.30)'); g.addColorStop(.45, 'rgba(255,236,190,1)');
+    g.addColorStop(.6, 'rgba(255,245,215,1)'); g.addColorStop(1, 'rgba(232,192,114,.30)');
+    ctx.font = `700 168px ${ZH}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = g; ctx.shadowColor = 'rgba(232,192,114,.6)'; ctx.shadowBlur = 40 * kt;
+    ctx.fillText('电 波', cx, cy - 150);
+    ctx.restore();
+    tracked('T H E   W A V E', cx, cy - 34, 27, 9, EN, rgba(C_B, .92), 'center', kt * out);
+    const k2 = sstep(2.2, 3.4, lt);
+    if (k2 > 0) {
+      ctx.save(); ctx.globalAlpha = k2 * out * .85; ctx.strokeStyle = rgba(C_B, .55); ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(cx - 210, cy + 14); ctx.lineTo(cx + 210, cy + 14); ctx.stroke(); ctx.restore();
+    }
+  }
+}
+
+/* =========================== 字幕 / 章节 / 总调度 =========================== */
+const SUBS = [
+  [3.1, 8.5, '天线里的电子，其实一步都没走。', 'The electrons never leave the wire.'],
+  [8.6, 11.9, '它们只是在原地上下抖动。', 'They only shiver in place.'],
+  [12.4, 17.4, '抖动，抖出了一圈圈向外传播的电场。', 'And that shiver ripples outward as an electric field.'],
+  [17.5, 21.8, '电场本身在空间里前进，不是电子在跑。', 'It is the field that travels — not the charge.'],
+  [22.4, 28.4, '电场和磁场互相垂直，同时涨落。', 'Electric and magnetic fields stay perpendicular, oscillating in phase.'],
+  [28.5, 33.7, '一个稍有变化，另一个立刻响应，一道向前。', 'Change one, and the other answers at once.'],
+  [34.4, 40.4, '在真空里速度恒为光速，变的只是波长和频率。', 'In vacuum the speed is always c; only wavelength and frequency change.'],
+  [40.5, 45.7, '波长乘频率，等于光速。', 'Wavelength times frequency equals c.'],
+  [46.4, 52.2, '3 兆到 30 兆赫兹，这一段叫短波。', '3 to 30 MHz — this is the shortwave band.'],
+  [52.3, 57.7, '二十米波段就在其中，火腿最常用。', 'The 20-metre band sits inside it.'],
+  [58.4, 63.4, '短波靠地波只能传几十公里，远距离全靠电离层弹回来。', 'A ground wave dies within tens of kilometres — long haul needs the ionosphere.'],
+  [63.5, 67.7, '一跳两三千公里，几跳就能跨过大洋。', 'One hop spans thousands of kilometres.'],
+  [68.4, 72.4, '你此刻听到的每一个字，都是这样飞过来的。', 'Every word you hear arrived this way.'],
+  [72.5, 75.3, '电波。', 'THE WAVE.'],
+];
+const CHAP = [
+  [4.2, 11.9, '01', '电子', 'THE ELECTRON'],
+  [12.2, 21.9, '02', '场的传播', 'THE FIELD'],
+  [22.2, 33.9, '03', 'E 与 B', 'E AND B'],
+  [34.2, 45.9, '04', '速度', 'THE SPEED'],
+  [46.2, 57.9, '05', '波段', 'THE BANDS'],
+  [58.2, 67.9, '06', '天波', 'THE SKY WAVE'],
+];
+const CUES = [
+  { t: 3.0, name: 'hit', k: 1.0 }, { t: 4.0, name: 'whoosh', dur: .5 },
+  { t: 12.0, name: 'swell', dur: 1.2 }, { t: 22.0, name: 'hit', k: .7 },
+  { t: 34.0, name: 'crash' }, { t: 46.0, name: 'braam' },
+  { t: 58.0, name: 'hit', k: .9 }, { t: 68.0, name: 'ring', dur: 2.0 },
+];
+const HITS = [[3.0, 1.0], [22.0, .55], [34.0, .70], [46.0, .80], [58.0, .90], [68.0, .6]];
+
+function head(T) {
+  // 章节标记
+  for (const [a, b, n, zh, en] of CHAP) {
+    const k = win(T, a, b, .7, .8);
+    if (k <= .01) continue;
+    const x = 92, y = 96, sl = (1 - eout(clamp((T - a) / .8))) * -26;
+    text(n, x + sl, y, { size: 44, weight: 700, font: EN, color: '#e8c072', alpha: k, align: 'left' });
+    ctx.save(); ctx.globalAlpha = k * .9; ctx.fillStyle = '#e8c072'; ctx.fillRect(x + 62 + sl, y - 24, 2, 48); ctx.restore();
+    text(zh, x + 84 + sl, y - 9, { size: 33, weight: 700, color: '#fff', alpha: k, align: 'left' });
+    tracked(en, x + 84 + sl, y + 27, 14, 4.5, EN, '#c9b184', 'left', k * .9);
+  }
+  // 字幕
+  for (const [a, b, zh, en] of SUBS) {
+    if (T < a - .35 || T > b + .35) continue;
+    const k = win(T, a, b, .26, .34); if (k <= .01) continue;
+    ctx.save();
+    const g = ctx.createLinearGradient(0, 860, 0, H);
+    g.addColorStop(0, 'rgba(2,5,10,0)'); g.addColorStop(1, `rgba(2,5,10,${.62 * k})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 860, W, 220); ctx.restore();
+    text(zh, W / 2, 964, { size: 44, weight: 700, color: '#fff', alpha: k, glow: 'rgba(0,0,0,.95)', blur: 16 });
+    text(en, W / 2, 1022, { size: 25, font: EN, color: '#cfd8e2', alpha: k * .88, glow: 'rgba(0,0,0,.9)', blur: 10 });
+  }
+  // 重音闪光
+  let fl = 0;
+  for (const [th, k] of HITS) if (T >= th && T < th + 1.4) fl += .34 * k * Math.exp(-(T - th) * 5.5);
+  if (fl > .008) { ctx.fillStyle = `rgba(226,240,255,${Math.min(.5, fl)})`; ctx.fillRect(0, 0, W, H); }
+}
+
+const SEG = [
+  [0, 4, seg1], [4, 12, seg2], [12, 22, seg3], [22, 34, seg4],
+  [34, 46, seg5], [46, 58, seg6], [58, 68, segIon], [68, TOTAL, seg8],
+];
+function frame(T) {
+  T = clamp(T, 0, TOTAL - 1e-3);
+  backdrop(T);
+  const seg = SEG.find(s => T >= s[0] && T < s[1]) || SEG[SEG.length - 1];
+  const lt = T - seg[0];
+  // 段落交叉淡入：镜头轻微推入
+  const push = 1 + .012 * Math.sin(clamp(lt / (seg[1] - seg[0])) * PI);
+  ctx.save();
+  ctx.translate(W / 2, H / 2); ctx.scale(push, push); ctx.translate(-W / 2, -H / 2);
+  seg[2](T, lt, T);
+  ctx.restore();
+  ctx.drawImage(VIG, 0, 0);
+  head(T);
+}
+
+/* ---------------- 字体 + 导出钩子 ---------------- */
+let fontsReady = false;
+let WANT = null;            // 预览时希望停在/从哪一秒开始（?t=NN）
+const SRC = document.scripts[document.scripts.length - 1].textContent;
+const CJK = [...new Set(SRC.replace(/[\x00-\x7f]/g, ''))].join('') + 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+Promise.all([
+  document.fonts.load(`400 40px "Noto Serif SC"`, CJK),
+  document.fonts.load(`700 40px "Noto Serif SC"`, CJK),
+]).catch(() => document.fonts.ready).then(() => document.fonts.ready).then(() => {
+  fontsReady = true;
+  const ld = document.getElementById('load');
+  if (ld) { ld.style.transition = 'opacity .6s'; ld.style.opacity = '0'; setTimeout(() => ld.remove(), 700); }
+  frame(WANT === null ? 0 : WANT);          // 别用 frame(0) 覆盖 ?t= 指定的帧
+});
+setTimeout(() => { if (!fontsReady) { fontsReady = true; frame(WANT === null ? 0 : WANT); } }, 15000);
+
+window.__ready = () => fontsReady;
+window.__frame = (T, fps = 30) => { frame(T); return cv.toDataURL('image/jpeg', .95); };
+window.__duration = TOTAL;
+window.__cues = () => CUES.slice().sort((a, b) => a.t - b.t);
+
+// 本地预览：?t=来直接看某一秒
+if (/[?&]export=1/.test(location.search)) {
+  const l0 = document.getElementById('load'); if (l0) l0.remove();
+  const s0 = document.getElementById('start'); if (s0) s0.remove();
+} else {
+  const q = new URLSearchParams(location.search);
+  const au = document.getElementById('au');
+  const startEl = document.getElementById('start');
+  if (q.has('t')) {
+    if (startEl) startEl.remove();
+    WANT = +q.get('t');
+    frame(WANT);
+  } else {
+    let playing = false, useAudio = true, clock0 = 0;
+    const now = () => useAudio ? au.currentTime : (performance.now() - clock0) / 1000;
+    const loop = () => { frame(now() % TOTAL); if (playing) requestAnimationFrame(loop); };
+    const begin = () => {
+      if (startEl && startEl.parentNode) startEl.remove();
+      au.currentTime = 0;
+      const p = au.play();
+      if (p && p.catch) p.catch(() => { useAudio = false; clock0 = performance.now(); });
+      playing = true; requestAnimationFrame(loop);
+    };
+    au.addEventListener('error', () => { useAudio = false; });
+    au.addEventListener('ended', () => { try { au.currentTime = 0; au.play().catch(() => {}); } catch (e) {} });
+    if (startEl) startEl.onclick = begin; else begin();
+  }
+}
+</script>
+</body>
+</html>

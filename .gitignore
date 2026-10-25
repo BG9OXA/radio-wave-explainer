@@ -1,0 +1,16 @@
+# 渲染产物
+out.mp4
+*.mp4
+!docs/**/*.mp4
+shots/
+!docs/shots/
+
+# 依赖与临时
+node_modules/
+__pycache__/
+*.pyc
+.cache/
+
+# 完整字体不入库（用 fonts/ 下的子集）
+fonts/*.ttf
+fonts/*.otf
